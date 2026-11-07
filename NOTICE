@@ -1,0 +1,2 @@
+Iron Furnaces for Horizon is a port of Iron Furnaces by Qelifern (pizzaatime), XenoMustache and Astryxion,
+whose 4.4.2 jar states the Apache License 2.0. The Rust code is a rewrite for Horizon; textures, models, recipes and language files are the original mod's, some recipes changed (load conditions removed, tags written out).
