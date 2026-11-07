@@ -46,7 +46,14 @@ const D_SPLIT: usize = 30;
 const D_MODE: usize = 31; // 0 furnace, 1 factory, 2 generator
 const D_TIER: usize = 32;
 const D_RAINBOW: usize = 33;
-pub const DATA_SLOTS: usize = 34;
+const D_ENERGY_HI: usize = 34;
+const D_CAPACITY_HI: usize = 35;
+pub const DATA_SLOTS: usize = 36;
+
+/// A menu's data slot carries 16 bits: a number past that goes in two.
+fn wide(data: &[i32], lo: usize, hi: usize) -> i32 {
+    (data[lo] & 0xFFFF) | (data[hi] << 16)
+}
 
 // Menu buttons.
 const B_SPLIT: i32 = 0;
@@ -1148,8 +1155,11 @@ fn fill_data(entity: &mut ModBlockEntity, m: i32) {
     d[D_COOK_TOTAL] = get_i(nbt, "CookTimeTotal", 0);
     d[D_GEN] = (get_f(nbt, "GeneratorBurn")) as i32;
     d[D_GEN_TOTAL] = get_i(nbt, "GeneratorRecent", 0);
-    d[D_ENERGY] = get_i(nbt, "energy", 0);
-    d[D_CAPACITY] = capacity_of(&block);
+    let (energy_now, cap) = (get_i(nbt, "energy", 0), capacity_of(&block));
+    d[D_ENERGY] = energy_now & 0xFFFF;
+    d[D_ENERGY_HI] = energy_now >> 16;
+    d[D_CAPACITY] = cap & 0xFFFF;
+    d[D_CAPACITY_HI] = cap >> 16;
     for j in 0..6 {
         d[D_FACTORY_COOK + j] = cook[j];
         d[D_FACTORY_TOTAL + j] = totals[j];
@@ -1666,7 +1676,7 @@ pub fn screen_draw(game: &Game<'_>, block: &str, data: &[i32], batch: &mut HudBa
                     let i = scaled(data[D_GEN], data[D_GEN_TOTAL].max(1), 13) as f32;
                     sprite(game, batch, texture, ox, oy, 56.0, 23.0 + 12.0 - i, 176.0, 12.0 - i, 14.0, i + 1.0);
                 }
-                let h = scaled(data[D_ENERGY], data[D_CAPACITY], 42) as f32;
+                let h = scaled(wide(data, D_ENERGY, D_ENERGY_HI), wide(data, D_CAPACITY, D_CAPACITY_HI), 42) as f32;
                 sprite(game, batch, "ironfurnaces:gui/energy", ox, oy, 109.0, 22.0 + 42.0 - h, 0.0, 42.0 - h, 14.0, h);
             }
             _ => {
@@ -1678,7 +1688,7 @@ pub fn screen_draw(game: &Game<'_>, block: &str, data: &[i32], batch: &mut HudBa
                         sprite(game, batch, FACTORY, ox, oy, 132.0, 5.0, 176.0, 64.0, 18.0, 67.0);
                     }
                 }
-                let h = scaled(data[D_ENERGY], data[D_CAPACITY], 42) as f32;
+                let h = scaled(wide(data, D_ENERGY, D_ENERGY_HI), wide(data, D_CAPACITY, D_CAPACITY_HI), 42) as f32;
                 sprite(game, batch, "ironfurnaces:gui/energy", ox, oy, 9.0, 7.0 + 42.0 - h, 0.0, 42.0 - h, 14.0, h);
                 for j in 0..6 {
                     let i = scaled(data[D_FACTORY_COOK + j], data[D_FACTORY_TOTAL + j], 22) as f32;
@@ -1831,7 +1841,7 @@ pub fn screen_tooltip(block: &str, data: &[i32], at: [f32; 2], lines: &mut Vec<S
     if let Some(bar) = energy_bar
         && inside(bar, at)
     {
-        lines.push(format!("{} / {} RF", data[D_ENERGY], data[D_CAPACITY]));
+        lines.push(format!("{} / {} RF", wide(data, D_ENERGY, D_ENERGY_HI), wide(data, D_CAPACITY, D_CAPACITY_HI)));
     }
     if !config_open {
         if at[0] >= -17.0 && at[0] <= 1.0 && at[1] >= -1.0 && at[1] <= 17.0 {

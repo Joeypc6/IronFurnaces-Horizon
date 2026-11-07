@@ -231,7 +231,7 @@ def main(jar, out):
         files[f"data/c/tags/item/{tag}.json"] = json.dumps({"replace": False, "values": values}, indent=2).encode()
     # Vanilla's own tag for a soul fire block, in case the base game's list isn't under the same name.
     # The menus: all 19 slots of BlockIronFurnaceTileBase; the heater's one.
-    files[f"data/{ID}/horizon/menu/furnace.json"] = json.dumps({"slots": 19, "data_slots": 34}, indent=2).encode()
+    files[f"data/{ID}/horizon/menu/furnace.json"] = json.dumps({"slots": 19, "data_slots": 36}, indent=2).encode()
     files[f"data/{ID}/horizon/menu/heater.json"] = json.dumps({"slots": 1, "data_slots": 2}, indent=2).encode()
     files[f"data/{ID}/horizon/creative_tab/main.json"] = json.dumps({
         "title": "itemGroup.ironfurnaces",
