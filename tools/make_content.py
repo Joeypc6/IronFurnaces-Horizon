@@ -243,7 +243,7 @@ def main(jar, out):
         "# Iron Furnaces' blocks and items, from ironfurnaces-neoforge-26.1.2-4.4.2.jar by ironfurnaces-horizon/tools/make_content.py.",
         f'id = "{ID}"',
         'name = "Iron Furnaces (blocks and items)"',
-        'version = "4.4.2"',
+        'version = "4.4.3"',
         'description = "Iron Furnaces\' blocks, recipes and textures."',
         'authors = ["Qelifern (pizzaatime)", "XenoMustache", "Astryxion"]',
         'api = "0.2"',

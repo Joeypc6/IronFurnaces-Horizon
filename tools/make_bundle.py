@@ -11,12 +11,12 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 BUNDLE = ROOT / "mixins" / "ironfurnaces"
 BUILD = ROOT.parent / "native-build" / "main" / "ironfurnaces"
-JAR = ROOT.parent / "ironfurnaces-neoforge-26.1.2-4.4.2.jar"
+JAR = ROOT.parent / "Ported" / "ironfurnaces-neoforge-26.1.2-4.4.2.jar"
 if not JAR.exists():
     JAR = ROOT.parent / "Ported" / JAR.name
 HORIZON = "6560641ba51a452f6bc2407baa4eb1b3be517ca8"
 MIXINS = "5a64af938ec86b00d53d16a408aabc0038fb3e57"
-VERSION = "4.4.2"
+VERSION = "4.4.3"
 M = "crate::game::ironfurnaces"
 
 GAME_MUT = ("game", "&mut crate::game::Game<'_>", "&mut *self")
@@ -93,7 +93,7 @@ fn ironfurnaces_analog(level: &crate::game::GameLevel<'_>, pos: horizon_core::po
 fn ironfurnaces_listed(mods: &mut Vec<crate::game::native_hooks::NativeMod>) {
     mods.push(crate::game::native_hooks::NativeMod {
         id: "ironfurnaces".into(),
-        title: "Iron Furnaces 4.4.2".into(),
+        title: "Iron Furnaces 4.4.3".into(),
         description: "Furnaces of every metal, with augments, factories and generators.".into(),
         keys: vec![["guide".to_string(), "Open Guide for Items".to_string(), "key.keyboard.w".to_string()]],
     });

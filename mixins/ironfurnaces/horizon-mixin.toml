@@ -1,6 +1,6 @@
 [mod]
 id = "ironfurnaces"
-version = "4.4.2"
+version = "4.4.3"
 
 # The Horizon commit this bundle was built and tested on.
 [compatibility]
@@ -667,6 +667,6 @@ bindings = [
 [[module]]
 id = "ironfurnaces-kit-marker"
 file = "crates/horizon-client/src/game.rs"
-name = "hz_kit_v2_ironfurnaces"
+name = "hz_kit_v3_ironfurnaces"
 source = "kit_marker.rs"
 # ---- END JEI KIT

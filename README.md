@@ -16,6 +16,20 @@ Horizon's hooks, so no original code runs. The textures, models, recipes and lan
 - The Wireless Heat Transmitter and Receiver, the Settings Linker, the spooky and wrapping looks, Rainbow Coal, and the Rainbow Furnace with its core.
 - JEI: furnaces as catalysts of smelting, and the generator's recipes. The W guide has pages written for this port.
 - `ironfurnaces.toml` in the config folder holds the Java mod's speeds, tiers, energy and generation.
+- Jade shows a furnace's contents and a factory's or generator's energy, as on NeoForge.
+
+## With AE2
+
+A pattern provider fills a furnace through the face it touches, and the result has to come back to the network, as
+in AE2 on NeoForge:
+
+- Put the provider on top (the default top face is Input), or set the face it touches to Input.
+- Send the result back: set that face to Input/Output and turn Auto Output on, so the furnace pushes it into the
+  provider; or put an import bus on a face set to Output. Without either, the job waits for its results forever.
+- Fuel goes in from the sides (Fuel), by hand, a hopper or an export bus. A factory takes power instead.
+
+The AE2 port's crafting status knows each furnace's time from its tier, the recipe, the speed or fuel augment and a
+factory's Auto Split, so a job's time left is right from its first craft.
 
 ## What differs from the Java mod
 

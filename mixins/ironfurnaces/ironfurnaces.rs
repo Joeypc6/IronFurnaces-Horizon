@@ -411,18 +411,26 @@ fn max_stack(game: &Game<'_>, item: &str) -> u32 {
 
 /// getSpeed: the tier's time, scaled by the recipe's own against 200.
 fn speed_for(game: &Game<'_>, entity: &ModBlockEntity, slot: usize) -> i32 {
+    entity.items[slot].as_ref().map_or(0, |stack| speed_for_stack(game, entity, stack))
+}
+
+fn speed_for_stack(game: &Game<'_>, entity: &ModBlockEntity, stack: &ItemStack) -> i32 {
     let regular = cfg(&format!("{}.speed", cfg_name(&entity.id)));
-    let Some(stack) = entity.items[slot].as_ref() else { return 0 };
     let Some(recipe) = cook_recipe(game, recipe_kind(entity), stack) else { return 0 };
     ((f64::from(regular) / (200.0 / f64::from(recipe.time.max(1)))) as i32).max(1)
 }
 
 /// getCookTime and getFactoryCookTime.
 fn cook_time(game: &Game<'_>, entity: &ModBlockEntity, slot: usize, current: i32) -> i32 {
-    if entity.items[slot].is_none() {
-        return current;
+    match entity.items[slot].as_ref() {
+        None => current,
+        Some(stack) => cook_time_of(game, entity, stack),
     }
-    let mut speed = speed_for(game, entity, slot);
+}
+
+/// The ticks one smelt of `stack` takes in this furnace now: its tier, the recipe's time, the green augment.
+fn cook_time_of(game: &Game<'_>, entity: &ModBlockEntity, stack: &ItemStack) -> i32 {
+    let mut speed = speed_for_stack(game, entity, stack);
     if is_item(&entity.items[AUGMENT_GREEN], "ironfurnaces:augment_speed") {
         speed = (speed / 2).max(1);
     }
@@ -681,33 +689,103 @@ fn set_prop(game: &mut Game<'_>, pos: Pos, key: &str, value: &str) {
     }
 }
 
-/// split, fillEmptySlots and getSplitCounts: the factory's inputs even each other out.
-fn auto_split(entity: &mut ModBlockEntity, range: std::ops::Range<usize>) {
-    let slots: Vec<usize> = range.map(|j| FACTORY_INPUT[j]).collect();
-    let Some(first) = slots.iter().find_map(|&s| entity.items[s].clone()) else { return };
-    let same = |s: &ItemStack| s.same_item_same_components(&first);
-    let usable: Vec<usize> = slots.iter().copied().filter(|&s| entity.items[s].as_ref().is_none_or(same)).collect();
-    let total: u32 = usable.iter().map(|&s| entity.items[s].as_ref().map_or(0, |i| i.count)).sum();
-    let n = usable.len() as u32;
-    if n == 0 || total == 0 {
+/// split, fillEmptySlots and getSplitCounts: the factory's inputs even each other out. `full` is `split(true, ..)`, after
+/// a smelt; otherwise it splits only while a row is empty. A row's stack never goes to nothing here, so what cooks
+/// keeps cooking: empty rows get one each from the first row with more, then the rows of the same item share evenly.
+fn auto_split(entity: &mut ModBlockEntity, range: std::ops::Range<usize>, full: bool) {
+    // canAutoSplitWork: not the Million, Allthemodium, Vibranium or Unobtainium furnaces.
+    if smelt_mult(&entity.id) > 1 {
         return;
     }
-    let (each, mut extra) = (total / n, total % n);
-    for &s in &usable {
-        let mut count = each;
-        if extra > 0 {
-            count += 1;
-            extra -= 1;
+    let slots: Vec<usize> = range.map(|j| FACTORY_INPUT[j]).collect();
+    if !full && slots.iter().all(|&s| entity.items[s].is_some()) {
+        return;
+    }
+    // itemToCheck: the last row's stack.
+    let Some(check) = slots.iter().rev().find_map(|&s| entity.items[s].clone()) else { return };
+    // fillEmptySlots.
+    let mut amount = slots.iter().filter(|&&s| entity.items[s].is_none()).count() as u32;
+    if amount > 0 {
+        for &j in &slots {
+            let Some(stack) = entity.items[j].clone() else { continue };
+            if stack.count > 1 && amount > 0 {
+                if amount >= stack.count {
+                    amount = stack.count - 1;
+                }
+                if let Some(s) = entity.items[j].as_mut() {
+                    s.count -= amount;
+                }
+                for &e in &slots {
+                    if entity.items[e].is_none() && amount > 0 {
+                        let mut one = stack.clone();
+                        one.count = 1;
+                        entity.items[e] = Some(one);
+                        amount -= 1;
+                    }
+                }
+                break;
+            }
         }
-        entity.items[s] = (count > 0).then(|| {
-            let mut one = first.clone();
-            one.count = count;
-            one
-        });
+    }
+    // getSplitCounts over the rows holding that item, the odd ones to the first rows.
+    let rows: Vec<usize> = slots.iter().copied().filter(|&s| entity.items[s].as_ref().is_some_and(|i| i.item == check.item)).collect();
+    let n = rows.len() as u32;
+    if n == 0 {
+        return;
+    }
+    let sum: u32 = rows.iter().map(|&s| entity.items[s].as_ref().map_or(0, |i| i.count)).sum();
+    let (each, extra) = (sum / n, sum % n);
+    for (i, &s) in rows.iter().enumerate() {
+        if let Some(stack) = entity.items[s].as_mut() {
+            stack.count = each + u32::from((i as u32) < extra);
+        }
     }
 }
 
+// ---- AE2: how long a furnace takes, for a crafting job's time left
+
+ironfurnaces_optional::if_mod_items!("port_ae2_me", {
+/// A pattern's craft in this furnace: the input it smelts, times the tier's speed and the augments, over what it
+/// smelts at once (the higher tiers' multiplier, a factory's slots when Auto Split spreads the input over them).
+fn ae2_machine(game: &Game<'_>, pos: [i32; 3], block: &str, inputs: &[(&str, i64)]) -> Option<crate::game::port_ae2_me::MachineTime> {
+    if !is_furnace(block) {
+        return None;
+    }
+    let Some(horizon_client::containers::BlockEntity::Mod(entity)) = game.world.block_entities.get(&(pos[0], pos[1], pos[2])) else { return None };
+    let m = mode(entity);
+    if m == 2 || entity.items.len() < SLOTS {
+        return None;
+    }
+    let kind = recipe_kind(entity);
+    let (stack, count) = inputs.iter().find_map(|(id, n)| {
+        let stack = ItemStack::new(id, 1);
+        cook_recipe(game, kind, &stack).map(|_| (stack, (*n).max(1)))
+    })?;
+    let each = f64::from(cook_time_of(game, entity, &stack));
+    let at_once = i64::from(smelt_mult(&entity.id).max(1));
+    let lanes = if m == 1 && get_i(&entity.nbt, "AutoSplit", 0) != 0 { factory_range(&entity.id).len() as i64 } else { 1 };
+    let done = if m == 1 {
+        int_array(&entity.nbt, "FactoryCookTime", 6).into_iter().max().filter(|c| *c > 0)
+    } else {
+        Some(get_i(&entity.nbt, "CookTime", 0)).filter(|c| *c > 0)
+    };
+    Some(crate::game::port_ae2_me::MachineTime {
+        ticks: each * count as f64 / (at_once * lanes) as f64,
+        latency: each * (count as f64 / (at_once * lanes) as f64).ceil(),
+        done: done.map(f64::from),
+    })
+}
+});
+
+fn register_ae2() {
+    ironfurnaces_optional::if_mod!("port_ae2_me", {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| crate::game::port_ae2_me::register_machine(ae2_machine));
+    } else { () });
+}
+
 pub fn block_entity_tick(game: &mut Game<'_>, pos: Pos, entity: &mut ModBlockEntity) {
+    register_ae2();
     if is_heater(&entity.id) {
         heater_tick(pos, entity);
         return;
@@ -914,7 +992,7 @@ fn energy_raw(e: &ModBlockEntity) -> i32 {
 fn factory_tick(game: &mut Game<'_>, pos: Pos, entity: &mut ModBlockEntity, time: i64) {
     let range = factory_range(&entity.id);
     if get_i(&entity.nbt, "AutoSplit", 0) != 0 {
-        auto_split(entity, range.clone());
+        auto_split(entity, range.clone(), false);
     }
     let mut cook = int_array(&entity.nbt, "FactoryCookTime", 6);
     let mut totals = int_array(&entity.nbt, "FactoryTotalCookTime", 6);
@@ -948,7 +1026,7 @@ fn factory_tick(game: &mut Game<'_>, pos: Pos, entity: &mut ModBlockEntity, time
                         used = 0.0;
                         totals[j] = cook_time(game, entity, slot, totals[j]);
                         if get_i(&entity.nbt, "AutoSplit", 0) != 0 {
-                            auto_split(entity, range.clone());
+                            auto_split(entity, range.clone(), true);
                         }
                         smelt(game, entity, slot, slot + 6, false);
                         auto_transfer(game, entity, pos);
