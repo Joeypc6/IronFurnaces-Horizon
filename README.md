@@ -36,7 +36,7 @@ factory's Auto Split, so a job's time left is right from its first craft.
 
 - **Experience** from breaking a furnace goes straight to whoever broke it, and from taking a result to whoever took it. The Java mod drops orbs. A blast loses it.
 - **Unlocking recipes** by taking a result doesn't happen.
-- **PMMO's hook and the update checker** are left out. Allthemodium, Vibranium and Unobtainium furnaces are there, but need those metals from another mod.
+- **PMMO's hook and the update checker** are left out. Allthemodium, Vibranium and Unobtainium furnaces are there, but need those metals from another mod: Allthemodium's (its `c:` tags), or [Vast Depths](https://github.com/voltzz900/vast-ores)' stellarite, infernium and voidium, a tier each.
 - **The comparator subtraction mode** the language file mentions isn't in the Java mod's screens either.
 
 ## Build
