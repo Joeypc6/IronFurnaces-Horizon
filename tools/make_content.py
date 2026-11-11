@@ -71,10 +71,36 @@ C_TAGS = {
     "storage_blocks/allthemodium": [],
     "storage_blocks/vibranium": [],
     "storage_blocks/unobtainium": [],
+    # Vast Depths' end-game metals, a tier each, for the modded furnaces (empty without it, as above).
+    "ingots/stellarite": [],
+    "ingots/infernium": [],
+    "ingots/voidium": [],
+    "storage_blocks/stellarite": [],
+    "storage_blocks/infernium": [],
+    "storage_blocks/voidium": [],
     "rods/blaze": ["minecraft:blaze_rod"],
     "nether_stars": ["minecraft:nether_star"],
     "dusts/prismarine": ["minecraft:prismarine_shard"],
 }
+
+
+# The modded tiers take their metal from Allthemodium (its `c:` tags) or from Vast Depths, whose stellarite, infernium and
+# voidium stand in the same places of its progression: `ironfurnaces:<tier>_ingots` holds both, and the jar's own
+# `<tier>_corners` (its storage blocks) gets the other mod's blocks too.
+MODDED_TIERS = {"allthemodium": "stellarite", "vibranium": "infernium", "unobtainium": "voidium"}
+
+
+def modded_tiers(name, doc):
+    """A recipe or tag of the jar, with the modded tiers' metals widened as above."""
+    if name.startswith(f"data/{ID}/recipe/"):
+        text = json.dumps(doc)
+        for tier in MODDED_TIERS:
+            text = text.replace(f'"#c:ingots/{tier}"', f'"#{ID}:{tier}_ingots"')
+        return json.loads(text)
+    for tier, metal in MODDED_TIERS.items():
+        if name == f"data/{ID}/tags/item/{tier}_corners.json":
+            doc["values"] = doc.get("values", []) + [f"#c:storage_blocks/{metal}"]
+    return doc
 
 
 def furnace_block(name):
@@ -212,7 +238,7 @@ def main(jar, out):
         if name.startswith(f"data/{ID}/tags/item/") and name.endswith(".json"):
             doc = json.loads(source.read(name))
             doc["values"] = strip_required(doc.get("values", []))
-            files[name] = json.dumps(doc, indent=2).encode()
+            files[name] = json.dumps(modded_tiers(name, doc), indent=2).encode()
             continue
         if name.startswith("data/c/tags/item/") and name.endswith(".json"):
             doc = json.loads(source.read(name))
@@ -223,7 +249,7 @@ def main(jar, out):
             # (NeoForge's `neoforge:conditions` say "if the tag isn't empty": an empty tag already matches nothing.)
             doc = json.loads(source.read(name))
             doc.pop("neoforge:conditions", None)
-            files[name] = json.dumps(doc, indent=2).encode()
+            files[name] = json.dumps(modded_tiers(name, doc), indent=2).encode()
             continue
         files[name] = source.read(name)
     for name in FURNACES:
@@ -242,6 +268,9 @@ def main(jar, out):
         files[f"data/{ID}/horizon/item/{name}.json"] = json.dumps(declaration, indent=2).encode()
     for tag, values in C_TAGS.items():
         files[f"data/c/tags/item/{tag}.json"] = json.dumps({"replace": False, "values": values}, indent=2).encode()
+    for tier, metal in MODDED_TIERS.items():
+        files[f"data/{ID}/tags/item/{tier}_ingots.json"] = json.dumps(
+            {"replace": False, "values": [f"#c:ingots/{tier}", f"#c:ingots/{metal}"]}, indent=2).encode()
     # Vanilla's own tag for a soul fire block, in case the base game's list isn't under the same name.
     # The menus: all 19 slots of BlockIronFurnaceTileBase; the heater's one.
     files[f"data/{ID}/horizon/menu/furnace.json"] = json.dumps({"slots": 19, "data_slots": 36}, indent=2).encode()
