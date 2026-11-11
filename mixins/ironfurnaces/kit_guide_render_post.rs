@@ -5,5 +5,5 @@ fn kit_guide_render_post_ironfurnaces(game: &crate::game::Game<'_>, batch: &mut 
     }
     crate::game::hz_kit_guide_ironfurnaces::screen_frame(screen.id, screen.menu);
     crate::game::hz_kit_guide_ironfurnaces::draw(game, batch, screen.mouse);
-} else { () })
+} else { let _ = (game, batch, screen); () })
 }

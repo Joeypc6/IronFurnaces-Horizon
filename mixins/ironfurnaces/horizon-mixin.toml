@@ -1,10 +1,10 @@
 [mod]
 id = "ironfurnaces"
-version = "4.4.3"
+version = "4.4.4"
 
 # The Horizon commit this bundle was built and tested on.
 [compatibility]
-horizon_revision = "6560641ba51a452f6bc2407baa4eb1b3be517ca8"
+horizon_revision = "fdc87aecdbd116bf1e08adcd062fcbaea8c2e2ca"
 
 [[module]]
 id = "ironfurnaces"
@@ -211,6 +211,18 @@ bindings = [
 ]
 
 [[injection]]
+id = "if-screen-post"
+kind = "HEAD"
+hook = "screen_render_post"
+hook_version = 1
+helper = "h_screen_post.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "batch", ty = "&mut horizon_client::hud::HudBatch", value = "&mut *batch" },
+  { name = "screen", ty = "&crate::game::native_hooks::NativeScreenView<'_>", value = "&*screen" },
+]
+
+[[injection]]
 id = "if-tooltip"
 kind = "HEAD"
 hook = "tooltip"
@@ -371,6 +383,12 @@ name = "hz_kit_collection_ironfurnaces"
 source = "kit_collection.rs"
 
 [[module]]
+id = "ironfurnaces-kit-math"
+file = "crates/horizon-client/src/game.rs"
+name = "hz_kit_math_ironfurnaces"
+source = "kit_math.rs"
+
+[[module]]
 id = "ironfurnaces-kit-collection-size"
 file = "crates/horizon-client/src/game/native_panel.rs"
 name = "hz_kit_panel_ironfurnaces"
@@ -484,6 +502,28 @@ bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
   { name = "scroll", ty = "[f64; 2]", value = "scroll" },
   { name = "canceled", ty = "&mut bool", value = "&mut *canceled" },
+]
+
+[[injection]]
+id = "ironfurnaces-kit-slot-tip"
+priority = 110
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::stations::Game<'_>::draw_slot_tooltip"
+helper = "kit_slot_tip.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
+[[injection]]
+id = "ironfurnaces-kit-screen-tip"
+priority = 110
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::native_hooks::Game<'_>::draw_native_screen_tooltip"
+helper = "kit_screen_tip.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
 ]
 
 [[injection]]
@@ -654,6 +694,16 @@ bindings = [
 ]
 
 [[injection]]
+id = "ironfurnaces-kit-guide-hide-tip"
+priority = 190
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_tooltip_render_pre"
+helper = "kit_guide_hide_tip.rs"
+bindings = [
+  { name = "cancel", ty = "&mut bool", value = "&mut *cancel" },
+]
+
+[[injection]]
 id = "ironfurnaces-kit-guide-shown"
 priority = 200
 kind = "HEAD"
@@ -667,6 +717,6 @@ bindings = [
 [[module]]
 id = "ironfurnaces-kit-marker"
 file = "crates/horizon-client/src/game.rs"
-name = "hz_kit_v3_ironfurnaces"
+name = "hz_kit_v14_ironfurnaces"
 source = "kit_marker.rs"
 # ---- END JEI KIT

@@ -5,5 +5,5 @@ fn ae2_jei_event(
 ) {
     ironfurnaces_optional::if_kit_jei!("ironfurnaces", {
     crate::game::hz_kit_layer_ironfurnaces::event(game, mod_id, event);
-} else { () })
+} else { let _ = (game, mod_id, event); () })
 }

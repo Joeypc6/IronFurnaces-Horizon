@@ -181,10 +181,23 @@ A **Wireless Heat Transmitter** takes power. Put a **Receiver** in it to bind th
 burns the transmitter's power.
 """,
     }
-    index = {"pages": list(pages)}
-    for name, text in pages.items():
-        files[f"data/{ID}/ae2guide/{name}"] = text.encode()
-    files[f"data/{ID}/ae2guide/index.json"] = json.dumps(index, indent=2).encode()
+    import guide_index
+    # 3D scenes (drag to turn): every tier side by side, furnaces with their hoppers and AE2, and the heater.
+    north = {"facing": "north"}
+    tiers = ["copper", "iron", "silver", "gold", "diamond", "emerald", "crystal", "obsidian", "netherite", "million"]
+    pages["furnaces.md"] += "\n" + guide_index.scene(files, ID, "tiers", [(i, 0, 0, f"{ID}:{t}_furnace", north) for i, t in enumerate(tiers)])
+    pages["furnaces.md"] += (
+        "\nHoppers follow the sides: one on top feeds the input, one under it takes the result.\n\n"
+        + guide_index.scene(files, ID, "automation", [
+            (0, 1, 0, "minecraft:hopper", {"facing": "down"}), (0, 0, 0, f"{ID}:iron_furnace", north), (0, -1, 0, "minecraft:hopper", {"facing": "down"})])
+        # How it works with AE2: shown only when AE2 is installed too.
+        + guide_index.if_mods(["ae2:pattern_provider"],
+            "\nWith AE2, a pattern provider on top fills it, and a face set to Input/Output with Auto Output sends the "
+            "result back:\n\n"
+            + guide_index.scene(files, ID, "automation_ae2", [
+                (0, 0, 0, f"{ID}:diamond_furnace", north), (0, 1, 0, "ae2:pattern_provider"), (0, 1, 1, "ae2:fluix_glass_cable"), (0, 1, 2, "ae2:controller")])))
+    pages["rainbow.md"] += "\n" + guide_index.scene(files, ID, "heater", [(0, 0, 0, f"{ID}:heater", north), (2, 0, 0, f"{ID}:iron_furnace", north)])
+    guide_index.write(files, ID, pages)
 
 
 def main(jar, out):
@@ -243,7 +256,7 @@ def main(jar, out):
         "# Iron Furnaces' blocks and items, from ironfurnaces-neoforge-26.1.2-4.4.2.jar by ironfurnaces-horizon/tools/make_content.py.",
         f'id = "{ID}"',
         'name = "Iron Furnaces (blocks and items)"',
-        'version = "4.4.3"',
+        'version = "4.4.4"',
         'description = "Iron Furnaces\' blocks, recipes and textures."',
         'authors = ["Qelifern (pizzaatime)", "XenoMustache", "Astryxion"]',
         'api = "0.2"',

@@ -4,5 +4,5 @@ fn kit_guide_char_ironfurnaces(game: &crate::game::Game<'_>, c: char, canceled: 
     if game.player.is_some() && crate::game::hz_kit_guide_ironfurnaces::is_open() {
         *canceled = true;
     }
-} else { () })
+} else { let _ = (game, c, canceled); () })
 }

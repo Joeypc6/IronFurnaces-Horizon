@@ -16,6 +16,7 @@ Horizon's hooks, so no original code runs. The textures, models, recipes and lan
 - The Wireless Heat Transmitter and Receiver, the Settings Linker, the spooky and wrapping looks, Rainbow Coal, and the Rainbow Furnace with its core.
 - JEI: furnaces as catalysts of smelting, and the generator's recipes. The W guide has pages written for this port.
 - `ironfurnaces.toml` in the config folder holds the Java mod's speeds, tiers, energy and generation.
+- Smelting, blasting and smoking recipes come from the world, its data packs included, as a vanilla furnace finds them, and a result never goes past its own stack limit (a Million Furnace's 64 at once included).
 - Jade shows a furnace's contents and a factory's or generator's energy, as on NeoForge.
 
 ## With AE2

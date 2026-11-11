@@ -93,7 +93,6 @@ fn set_f(nbt: &mut Compound, key: &str, value: f64) {
 // ---- Config (ironfurnaces.toml, the Java mod's keys and defaults)
 
 struct Config {
-    light: bool,
     values: HashMap<String, i32>,
 }
 
@@ -161,23 +160,22 @@ fn config() -> &'static Config {
                 }
             }
         });
-        let parse = |text: &str, values: &mut HashMap<String, i32>, light: &mut Option<bool>| {
+        // misc.lightupdates is read by the light table (light_state.rs), made when content loads.
+        let parse = |text: &str, values: &mut HashMap<String, i32>| {
             for line in text.lines() {
                 let Some((k, v)) = line.split_once('=') else { continue };
                 let (k, v) = (k.trim(), v.trim());
-                if k == "misc.lightupdates" {
-                    *light = v.parse().ok();
-                } else if let Ok(n) = v.parse() {
+                if let Ok(n) = v.parse() {
                     values.insert(k.to_owned(), n);
                 }
             }
         };
-        let (mut values, mut light) = (HashMap::new(), None);
-        parse(DEFAULT_CONFIG, &mut values, &mut light);
+        let mut values = HashMap::new();
+        parse(DEFAULT_CONFIG, &mut values);
         if let Some(text) = text {
-            parse(&text, &mut values, &mut light);
+            parse(&text, &mut values);
         }
-        Config { light: light != Some(true), values }
+        Config { values }
     })
 }
 
@@ -239,6 +237,8 @@ struct State {
     config_open: bool,
     /// Screen data as last drawn: which slots show.
     shown: Vec<bool>,
+    /// The furnace screen drawn this frame: its container, block, menu data and corner, for its tooltips.
+    drawn: Option<(Option<(i32, i32, i32)>, String, Vec<i32>, [f32; 2])>,
 }
 
 thread_local! {
@@ -389,8 +389,9 @@ fn recipe_kind(entity: &ModBlockEntity) -> &'static str {
     }
 }
 
+/// The world's recipes (its data packs' and a server's included), as a vanilla furnace finds them.
 fn cook_recipe<'a>(game: &'a Game<'_>, kind: &str, stack: &ItemStack) -> Option<&'a horizon_client::crafting::Cooking> {
-    game.res.recipes().cook(kind, stack)
+    game.recipes().cook(kind, stack)
 }
 
 fn burn_time(game: &Game<'_>, stack: &ItemStack) -> i32 {
@@ -410,10 +411,6 @@ fn max_stack(game: &Game<'_>, item: &str) -> u32 {
 }
 
 /// getSpeed: the tier's time, scaled by the recipe's own against 200.
-fn speed_for(game: &Game<'_>, entity: &ModBlockEntity, slot: usize) -> i32 {
-    entity.items[slot].as_ref().map_or(0, |stack| speed_for_stack(game, entity, stack))
-}
-
 fn speed_for_stack(game: &Game<'_>, entity: &ModBlockEntity, stack: &ItemStack) -> i32 {
     let regular = cfg(&format!("{}.speed", cfg_name(&entity.id)));
     let Some(recipe) = cook_recipe(game, recipe_kind(entity), stack) else { return 0 };
@@ -487,13 +484,25 @@ fn factory_range(block: &str) -> std::ops::Range<usize> {
     }
 }
 
+/// The most of `result` the output slot may hold: the item's own stack limit, at most 64.
+fn output_limit(game: &Game<'_>, result: &ItemStack) -> u32 {
+    max_stack(game, &result.item).clamp(1, 64)
+}
+
+/// How many smelts fit at once: `per` made each, `have` already in a slot that holds `limit`, up to `mult` (1 for a
+/// plain furnace) and the `inputs` there are. An empty slot (`have` 0) holds `limit` too.
+fn smelt_times(limit: u32, have: u32, per: u32, mult: u32, inputs: u32) -> u32 {
+    (limit.saturating_sub(have) / per.max(1)).min(mult.max(1)).min(inputs)
+}
+
 /// canSmelt, canFactorySmelt.
 fn can_smelt(game: &Game<'_>, entity: &ModBlockEntity, input: usize, output: usize) -> bool {
     let Some(stack) = entity.items[input].as_ref() else { return false };
     let Some(recipe) = cook_recipe(game, recipe_kind(entity), stack) else { return false };
+    let limit = output_limit(game, &recipe.result);
     match entity.items[output].as_ref() {
-        None => true,
-        Some(out) => out.same_item_same_components(&recipe.result) && out.count + recipe.result.count <= max_stack(game, &out.item).min(64),
+        None => smelt_times(limit, 0, recipe.result.count, 1, 1) == 1,
+        Some(out) => out.same_item_same_components(&recipe.result) && smelt_times(limit, out.count, recipe.result.count, 1, 1) == 1,
     }
 }
 
@@ -504,11 +513,7 @@ fn smelt(game: &Game<'_>, entity: &mut ModBlockEntity, input: usize, output: usi
     let (result, id, experience) = (recipe.result.clone(), recipe.id.clone(), recipe.experience);
     let mult = smelt_mult(&entity.id) as u32;
     let have = entity.items[output].as_ref().map_or(0, |s| s.count);
-    let times = if mult > 1 {
-        ((64 - have) / result.count.max(1)).min(mult).min(stack.count)
-    } else {
-        1
-    };
+    let times = smelt_times(output_limit(game, &result), have, result.count, mult, stack.count);
     if times == 0 {
         return;
     }
@@ -784,7 +789,7 @@ fn register_ae2() {
     } else { () });
 }
 
-pub fn block_entity_tick(game: &mut Game<'_>, pos: Pos, entity: &mut ModBlockEntity) {
+pub(in crate::game) fn block_entity_tick(game: &mut Game<'_>, pos: Pos, entity: &mut ModBlockEntity) {
     register_ae2();
     if is_heater(&entity.id) {
         heater_tick(pos, entity);
@@ -1271,7 +1276,7 @@ fn valid_for_slot(game: &Game<'_>, entity: &ModBlockEntity, slot: usize, stack: 
     }
 }
 
-pub fn container_accepts(game: &Game<'_>, entity: &ModBlockEntity, slot: usize, stack: &ItemStack, face: Option<Direction>, cancel: &mut bool) {
+pub(in crate::game) fn container_accepts(game: &Game<'_>, entity: &ModBlockEntity, slot: usize, stack: &ItemStack, face: Option<Direction>, cancel: &mut bool) {
     if !is_furnace(&entity.id) {
         return;
     }
@@ -1298,25 +1303,8 @@ pub fn container_accepts(game: &Game<'_>, entity: &ModBlockEntity, slot: usize, 
     }
 }
 
-/// `native_menu_slot_rules`: what can be told from the stack alone.
-pub fn slot_rules(menu: &str, slot: usize, stack: &ItemStack, may_place: &mut bool, max_stack: &mut u32) {
-    if menu == "ironfurnaces:heater" {
-        *may_place = is_heater_item(&stack.item);
-        *max_stack = 1;
-    } else if menu == "ironfurnaces:furnace" {
-        match slot {
-            OUTPUT | 13..=18 => *may_place = false,
-            AUGMENT_RED | AUGMENT_GREEN | AUGMENT_BLUE => {
-                *may_place = augment_slot(&stack.item) == Some(slot);
-                *max_stack = 1;
-            }
-            _ => {}
-        }
-    }
-}
-
 /// `native_menu_quick_move`: quickMoveStack. Container slots go to the inventory, a stack from the inventory to the slot it fits.
-pub fn quick_move(game: &mut Game<'_>, entity: &mut ModBlockEntity, slot: usize, container_slots: usize, moving: &mut ItemStack, handled: &mut bool) {
+pub(in crate::game) fn quick_move(game: &mut Game<'_>, entity: &mut ModBlockEntity, slot: usize, container_slots: usize, moving: &mut ItemStack, handled: &mut bool) {
     if !is_furnace(&entity.id) || slot < container_slots {
         return;
     }
@@ -1372,7 +1360,7 @@ pub fn menu_clicked(uuid: u128, slot: i32) {
 // ---- Placing, breaking, right clicks
 
 /// setPlacedBy and getStateForPlacement: it faces the player; the player's list and, for the rainbow, its owner.
-pub fn placed(game: &mut Game<'_>, pos: Pos) {
+pub(in crate::game) fn placed(game: &mut Game<'_>, pos: Pos) {
     let block = game.native_block(pos);
     if !is_furnace(&block) {
         return;
@@ -1404,7 +1392,7 @@ pub fn placed(game: &mut Game<'_>, pos: Pos) {
 }
 
 /// `native_right_click_block`: BlockIronFurnaceBase.useWithoutItem and the items' useOn.
-pub fn right_click(game: &mut Game<'_>, pos: Pos, canceled: &mut bool) {
+pub(in crate::game) fn right_click(game: &mut Game<'_>, pos: Pos, canceled: &mut bool) {
     let block = game.native_block(pos);
     let Some(player) = game.native_acting_player() else { return };
     let held = game.held().cloned();
@@ -1556,7 +1544,7 @@ fn upgrade(game: &mut Game<'_>, pos: Pos, from: &str, to: &str, creative: bool) 
 
 /// BlockIronFurnaceBase.onBlockStateChange: experience where it stood. (Its items drop through the container.) A Rainbow
 /// Furnace in a blast leaves its core (onExplosionHit).
-pub fn block_drops(game: &mut Game<'_>, pos: Pos, state_block: &str, explosion: bool, drops: &mut Vec<ItemStack>) {
+pub(in crate::game) fn block_drops(game: &mut Game<'_>, pos: Pos, state_block: &str, explosion: bool, drops: &mut Vec<ItemStack>) {
     if !is_furnace(state_block) {
         return;
     }
@@ -1575,15 +1563,6 @@ pub fn block_drops(game: &mut Game<'_>, pos: Pos, state_block: &str, explosion: 
     if explosion && is_rainbow(state_block) {
         drops.push(ItemStack::new("ironfurnaces:rainbow_core", 1));
     }
-}
-
-/// The lit state's light (getLightEmission) on the content plan's state table.
-pub fn emission(block: &str, combo: &[(String, String)]) -> Option<i64> {
-    if !block.starts_with("ironfurnaces:") || !block.ends_with("_furnace") {
-        return None;
-    }
-    let lit = combo.iter().any(|(k, v)| k == "lit" && v == "true");
-    Some(if lit && config().light { 14 } else { 0 })
 }
 
 // ---- The screen
@@ -1616,7 +1595,8 @@ pub fn screen(block: &str, out: &mut Option<super::native_hooks::NativeScreen>) 
         *out = Some(super::native_hooks::NativeScreen {
             width: 176.0,
             height: 166.0,
-            slots: vec![Some([80.0, 35.0])],
+            // BlockWirelessEnergyHeaterContainer: SlotHeater(te, 0, 80, 37).
+            slots: vec![Some([80.0, 37.0])],
             inventory_y: 84.0,
             inventory_x: 8.0,
             own_labels: false,
@@ -1653,7 +1633,7 @@ pub fn client_slot_shown(slot: usize) -> bool {
 }
 
 /// The server's slots that a client can't reach now (see `native_hidden_slots`).
-pub fn hidden_slots(game: &Game<'_>, pos: Pos, size: usize) -> Option<Vec<usize>> {
+pub(in crate::game) fn hidden_slots(game: &Game<'_>, pos: Pos, size: usize) -> Option<Vec<usize>> {
     let horizon_client::containers::BlockEntity::Mod(e) = game.world.block_entities.get(&(pos[0], pos[1], pos[2]))? else { return None };
     let (block, data) = (e.id.clone(), e.data.clone());
     if !is_furnace(&block) {
@@ -1709,7 +1689,8 @@ fn draw_button(game: &Game<'_>, batch: &mut HudBatch, o: [f32; 2], r: [f32; 4], 
     }
 }
 
-pub fn screen_draw(game: &Game<'_>, block: &str, data: &[i32], batch: &mut HudBatch, origin: [f32; 2]) {
+pub(in crate::game) fn screen_draw(game: &Game<'_>, block: &str, data: &[i32], batch: &mut HudBatch, origin: [f32; 2]) {
+    STATE.with_borrow_mut(|s| s.drawn = Some((game.container, block.to_owned(), data.to_vec(), origin)));
     let [ox, oy] = origin;
     if is_heater(block) {
         sprite(game, batch, "ironfurnaces:gui/heater", ox, oy, 0.0, 0.0, 0.0, 0.0, 176.0, 166.0);
@@ -1899,14 +1880,32 @@ fn side_words(setting: i32) -> String {
     }
 }
 
-pub fn screen_tooltip(block: &str, data: &[i32], at: [f32; 2], lines: &mut Vec<String>) {
+/// The game's own path for a screen's tooltips draws them before the JEI panel, which then covers them: they are
+/// drawn after it instead, in `screen_post`. This keeps the pointer for the screen's clicks.
+pub fn screen_tooltip(block: &str, data: &[i32], at: [f32; 2], _lines: &mut Vec<String>) {
+    if is_furnace(block) && data.len() >= DATA_SLOTS {
+        STATE.with_borrow_mut(|s| s.mouse = at);
+    }
+}
+
+/// `native_screen_render_post`: the furnace screen's tooltips, over everything drawn beside the screen.
+pub(in crate::game) fn screen_post(game: &Game<'_>, batch: &mut HudBatch, _screen: &super::native_hooks::NativeScreenView<'_>) {
+    let Some((key, block, data, origin)) = STATE.with_borrow_mut(|s| s.drawn.take()) else { return };
+    if key != game.container || game.carried.is_some() || kit_guide::is_open() {
+        return;
+    }
+    let (cx, cy) = game.cursor;
+    let mut lines = Vec::new();
+    furnace_tooltip(&block, &data, [cx - origin[0], cy - origin[1]], &mut lines);
+    let lines: Vec<(horizon_client::text::Text, u32)> = lines.into_iter().map(|l| (horizon_client::text::Text::literal(l), u32::MAX)).collect();
+    game.draw_tooltip_lines(batch, &lines, cx, cy);
+}
+
+fn furnace_tooltip(block: &str, data: &[i32], at: [f32; 2], lines: &mut Vec<String>) {
     if !is_furnace(block) || data.len() < DATA_SLOTS {
         return;
     }
-    let config_open = STATE.with_borrow_mut(|s| {
-        s.mouse = at;
-        s.config_open
-    });
+    let config_open = STATE.with_borrow(|s| s.config_open);
     if inside(R_AUGMENT, at) {
         let key = if data[D_AUGMENT_GUI] != 0 { ("tooltip.ironfurnaces.gui_open_furnace", "Furnace") } else { ("tooltip.ironfurnaces.gui_open_augments", "Augments") };
         lines.push(lang(key.0, key.1));
@@ -2073,7 +2072,7 @@ pub fn tooltip(stack: &ItemStack, lines: &mut Vec<(horizon_client::text::Text, u
 
 // ---- JEI and the guide
 
-pub fn kit_frame(game: &mut Game<'_>) {
+pub(in crate::game) fn kit_frame(game: &mut Game<'_>) {
     if !game.native_on("ironfurnaces") {
         return;
     }
@@ -2159,7 +2158,7 @@ pub fn update_tag(entity: &ModBlockEntity, tag: &mut Option<Compound>) {
 }
 
 /// BlockIronFurnaceBase.animateTick: flames and smoke of what's lit near the player, with their sounds.
-pub fn client_tick(game: &mut Game<'_>) {
+pub(in crate::game) fn client_tick(game: &mut Game<'_>) {
     use horizon_client::particles::{ParticleOptions, ParticleType};
     let Some(player) = game.native_player().map(|p| [p.x, p.y, p.z]) else { return };
     let lit: Vec<Pos> = game
@@ -2219,5 +2218,41 @@ pub fn client_tick(game: &mut Game<'_>) {
                 game.native_add_particle(&flame, [x + dx, h, z + dz], [0.0; 3]);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod stack_limit_tests {
+    use super::smelt_times;
+
+    #[test]
+    fn empty_output_slot_respects_a_low_limit() {
+        // A 4x multiplier furnace, a recipe making 4 of an item that stacks to 16: 4 smelts fill it, never 16 or 64.
+        assert_eq!(smelt_times(16, 0, 4, 4, 64), 4);
+        assert_eq!(smelt_times(16, 0, 5, 4, 64), 3);
+        // An item that stacks to 1: one smelt into an empty slot, whatever the multiplier.
+        assert_eq!(smelt_times(1, 0, 1, 4, 64), 1);
+        // A result bigger than its own stack limit can't be smelted at all.
+        assert_eq!(smelt_times(1, 0, 2, 1, 64), 0);
+    }
+
+    #[test]
+    fn partly_filled_low_limit_stack_is_not_overfilled() {
+        assert_eq!(smelt_times(16, 12, 1, 4, 64), 4);
+        assert_eq!(smelt_times(16, 14, 1, 4, 64), 2);
+        assert_eq!(smelt_times(16, 16, 1, 4, 64), 0);
+        assert_eq!(smelt_times(16, 13, 4, 4, 64), 0);
+        assert_eq!(smelt_times(1, 1, 1, 4, 64), 0);
+    }
+
+    #[test]
+    fn plain_and_normal_cases_are_unchanged() {
+        assert_eq!(smelt_times(64, 0, 1, 1, 64), 1);
+        assert_eq!(smelt_times(64, 63, 1, 1, 64), 1);
+        assert_eq!(smelt_times(64, 64, 1, 1, 64), 0);
+        assert_eq!(smelt_times(64, 60, 1, 8, 64), 4);
+        assert_eq!(smelt_times(64, 0, 1, 8, 3), 3);
+        // A count above the limit (from another mod) never underflows.
+        assert_eq!(smelt_times(16, 40, 1, 4, 64), 0);
     }
 }

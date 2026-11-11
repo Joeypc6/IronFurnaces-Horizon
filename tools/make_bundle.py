@@ -14,9 +14,9 @@ BUILD = ROOT.parent / "native-build" / "main" / "ironfurnaces"
 JAR = ROOT.parent / "Ported" / "ironfurnaces-neoforge-26.1.2-4.4.2.jar"
 if not JAR.exists():
     JAR = ROOT.parent / "Ported" / JAR.name
-HORIZON = "6560641ba51a452f6bc2407baa4eb1b3be517ca8"
+HORIZON = "fdc87aecdbd116bf1e08adcd062fcbaea8c2e2ca"
 MIXINS = "5a64af938ec86b00d53d16a408aabc0038fb3e57"
-VERSION = "4.4.3"
+VERSION = "4.4.4"
 M = "crate::game::ironfurnaces"
 
 GAME_MUT = ("game", "&mut crate::game::Game<'_>", "&mut *self")
@@ -41,6 +41,7 @@ HOOKS = [
     ("screen-draw", "screen_draw", [GAME, ("block", "&str", "block"), ("data", "&[i32]", "data"), ("batch", "&mut horizon_client::hud::HudBatch", "&mut *batch"), ("origin", "[f32; 2]", "origin")], "screen_draw(game, block, data, batch, origin)"),
     ("screen-click", "screen_click", [GAME, ("block", "&str", "block"), ("data", "&[i32]", "data"), ("at", "[f32; 2]", "at"), ("right", "bool", "right"), ("button", "&mut Option<i32>", "&mut *button")], "screen_click(block, data, at, right, game.has_shift_down(), button)"),
     ("screen-tooltip", "screen_tooltip", [("block", "&str", "block"), ("data", "&[i32]", "data"), ("at", "[f32; 2]", "at"), ("lines", "&mut Vec<String>", "&mut *lines")], "screen_tooltip(block, data, at, lines)"),
+    ("screen-post", "screen_render_post", [GAME, ("batch", "&mut horizon_client::hud::HudBatch", "&mut *batch"), ("screen", "&crate::game::native_hooks::NativeScreenView<'_>", "&*screen")], "screen_post(game, batch, screen)"),
     ("tooltip", "tooltip", [("stack", "&ItemStack", "stack"), ("lines", "&mut Vec<(Text, u32)>", "&mut *lines")], "tooltip(stack, lines)"),
     ("kit-frame", "frame", [GAME_MUT], "kit_frame(game)"),
     ("tick", "tick", [GAME_MUT], "client_tick(game)"),
@@ -93,19 +94,28 @@ fn ironfurnaces_analog(level: &crate::game::GameLevel<'_>, pos: horizon_core::po
 fn ironfurnaces_listed(mods: &mut Vec<crate::game::native_hooks::NativeMod>) {
     mods.push(crate::game::native_hooks::NativeMod {
         id: "ironfurnaces".into(),
-        title: "Iron Furnaces 4.4.3".into(),
+        title: "Iron Furnaces 4.4.4".into(),
         description: "Furnaces of every metal, with augments, factories and generators.".into(),
         keys: vec![["guide".to_string(), "Open Guide for Items".to_string(), "key.keyboard.w".to_string()]],
     });
 }
 """,
-    "light_state.rs": """// BlockIronFurnaceBase.getLightEmission: a lit furnace gives off 14 (a content block's light is one number otherwise).
+    "light_state.rs": """// BlockIronFurnaceBase.getLightEmission: a lit furnace gives off 14 (a content block's light is one number otherwise),
+// none with `misc.lightupdates = true` (Config.disableLightupdates). The game folder is the working directory and the
+// mod's config is config/ironfurnaces.toml in it (Game::native_config_dir); the light table is made once, at load.
 fn ironfurnaces_light_state(b: &NewBlock, combo: &[(String, String)], row: &mut J) {
     if !b.decl.id.starts_with("ironfurnaces:") || !b.decl.id.ends_with("_furnace") {
         return;
     }
+    static DISABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let disabled = *DISABLED.get_or_init(|| {
+        let file = std::env::current_dir().unwrap_or_default().join("config").join("ironfurnaces.toml");
+        std::fs::read_to_string(file).is_ok_and(|text| {
+            text.lines().filter_map(|l| l.split_once('=')).any(|(k, v)| k.trim() == "misc.lightupdates" && v.trim() == "true")
+        })
+    });
     let lit = combo.iter().any(|(k, v)| k == "lit" && v == "true");
-    row.set("emission", J::Num(if lit { 14i64 } else { 0i64 }.into()));
+    row.set("emission", J::Num(if lit && !disabled { 14i64 } else { 0i64 }.into()));
 }
 """,
     "drops.rs": """fn ironfurnaces_drops(game: &mut crate::game::Game<'_>, pos: [i32; 3], state: BlockStateId, explosion: Option<f32>, drops: &mut Vec<ItemStack>) {
@@ -200,6 +210,9 @@ def main():
     (BUNDLE / "horizon-mixin.toml").write_text("\n".join(out), encoding="utf8")
     # The JEI window, Mob Drops, World Gen, the creative panel and the W guide: this mod's own copy.
     subprocess.run([sys.executable, str(ROOT.parent / "jei-kit" / "apply.py"), "ironfurnaces", str(BUNDLE)], check=True)
+    # The registry checks with -D warnings: helpers' unused parameters, and those of the `else` a missing mod leaves.
+    for fixer in ("unused_helper_params.py", "use_helper_params.py"):
+        subprocess.run([sys.executable, str(ROOT.parent / "tools" / fixer), str(BUNDLE)], check=True)
     (BUNDLE / "data").mkdir(exist_ok=True)
     subprocess.run([sys.executable, str(ROOT / "tools" / "make_content.py"), str(JAR), str(BUNDLE / "data" / "ironfurnaces-content.hmod")], check=True)
     # The dev build folder: pinned, with no hooks number, so the pin applies.
