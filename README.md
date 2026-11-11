@@ -44,6 +44,11 @@ factory's Auto Split, so a job's time left is right from its first craft.
 This is a Horizon native mod bundle: Rust mixins compiled into the game. Native mods are unsandboxed code that runs with your rights, so
 read what you build.
 
+Last built on Horizon commit `fdc87ae` (Nightly 2026-11-08) as `native-fdc87ae-83d10460ef68`, with AE2, Jade, JEI (mod kit 14),
+Elevator, Hostile Neural Networks, Tinkers' Construct, Ender IO, Powah and Apothic Spawners: all ten compile together, and the W guide
+opens in game with its 3D scene of the furnaces. The block and item models were compared with the 4.4.2 jar's: all 135 the same, none
+missing.
+
 ```bash
 horizon-launcher native-build "path/to/folder/with/the/bundle" --trust-native-code
 ```
